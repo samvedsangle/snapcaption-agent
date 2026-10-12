@@ -1,0 +1,6 @@
+[server]
+# Matches MAX_UPLOAD_MB; the app checks the limit again itself.
+maxUploadSize = 15
+
+[browser]
+gatherUsageStats = false
