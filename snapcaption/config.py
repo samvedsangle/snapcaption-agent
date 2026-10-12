@@ -16,7 +16,7 @@ class Settings:
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-5-5"
+    anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
     api_key: str = ""  # protects the HTTP API; empty means open
     db_path: str = "data/snapcaption.db"
     nominatim_user_agent: str = "snapcaption/0.1"

@@ -70,6 +70,14 @@ def test_gemini_text_request_shape():
     assert call["config"].temperature == 0.3
 
 
+def test_gemini_flash_skips_thinking_other_models_untouched():
+    models = FakeGeminiModels(['{"ok": 1}', '{"ok": 1}'])
+    GeminiLLM("key", "gemini-2.5-flash", client=SimpleNamespace(models=models)).text_json("p")
+    GeminiLLM("key", "gemini-pro-x", client=SimpleNamespace(models=models)).text_json("p")
+    assert models.calls[0]["config"].thinking_config.thinking_budget == 0
+    assert models.calls[1]["config"].thinking_config is None
+
+
 def test_gemini_vision_sends_an_image_part():
     llm, models = gemini(['{"scene": "x"}'])
     assert llm.vision_json(b"\xff\xd8jpegbytes", "image/jpeg", "describe") == {"scene": "x"}
@@ -115,6 +123,14 @@ def test_anthropic_text_request_shape():
     call = messages.calls[0]
     assert call["model"] == "claude-x" and call["max_tokens"] > 0
     assert call["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_anthropic_refusal_fallback_only_where_supported():
+    messages = FakeAnthropicMessages(['{"ok": 1}', '{"ok": 1}'])
+    AnthropicLLM("key", "claude-opus-5-5", client=SimpleNamespace(messages=messages)).text_json("p")
+    AnthropicLLM("key", "claude-haiku-5-5", client=SimpleNamespace(messages=messages)).text_json("p")
+    assert messages.calls[0]["extra_body"] == {"fallbacks": "default"}
+    assert "extra_body" not in messages.calls[1]
 
 
 def test_anthropic_vision_sends_a_base64_image_block():

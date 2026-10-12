@@ -71,11 +71,16 @@ class GeminiLLM(_BaseLLM):
     def _call(self, contents: list, temperature: float) -> Optional[str]:
         from google.genai import types
 
+        extra = {}
+        if self.model.startswith("gemini-2.5-flash"):
+            # Describing, writing and scoring captions doesn't need hidden reasoning; skipping
+            # it makes each call faster and stretches the free tier's token quota.
+            extra["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         resp = self.client.models.generate_content(
             model=self.model,
             contents=contents,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json", temperature=temperature
+                response_mime_type="application/json", temperature=temperature, **extra
             ),
         )
         return resp.text
@@ -97,6 +102,8 @@ class AnthropicLLM(_BaseLLM):
     name = "Claude"
     max_tokens = 16000
     effort = "medium"
+    # Models that accept the server-side refusal fallback ("default" form).
+    _FALLBACK_MODELS = ("claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5")
 
     def __init__(self, api_key: str, model: str, client: Any = None):
         if client is None:
@@ -106,14 +113,19 @@ class AnthropicLLM(_BaseLLM):
         self.client, self.model = client, model
 
     def _call(self, content) -> str:
+        extra = {}
+        if self.model in self._FALLBACK_MODELS:
+            # If a safety classifier declines, let the API retry on a fallback model.
+            extra = {
+                "extra_headers": {"anthropic-beta": "server-side-fallback-2026-07-01"},
+                "extra_body": {"fallbacks": "default"},
+            }
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             messages=[{"role": "user", "content": content}],
             output_config={"effort": self.effort},
-            # If a safety classifier declines, let the API retry on a fallback model.
-            extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-            extra_body={"fallbacks": "default"},
+            **extra,
         )
         if getattr(resp, "stop_reason", None) == "refusal":
             raise LLMError("Claude declined this request.")

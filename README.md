@@ -132,7 +132,7 @@ Treat per-style likes as a hint, not a verdict: with a few dozen posts, audience
 ## Privacy
 
 - The photo sent to the model is resized and re-encoded with **no metadata**. The model never receives GPS, timestamps or camera info.
-- Place names come from reverse geocoding at about 10 m precision; only venue/neighbourhood, city and region are kept (no street or house number). Weather lookups use about 1 km precision.
+- Place names come from reverse geocoding at about 10 m precision; only venue/neighbourhood, city and region are kept (no street or house number). When the nearest match is a small shop or a street, the same rounded point is checked against OpenStreetMap's free Overpass API for an enclosing park or landmark. Weather lookups use about 1 km precision.
 - Stored in SQLite: caption text, a coarse place label, your picks and results. **No photos, no coordinates.**
 - Photos are sent to your model provider. Check the current terms for your plan: on free API tiers, providers may use submitted content to improve their products. Use a paid key (or the Anthropic provider) if you or your users upload private photos.
 - Nominatim's public server is for light use (one request per second, identifying User-Agent). For a real launch, use a paid geocoder or host your own.

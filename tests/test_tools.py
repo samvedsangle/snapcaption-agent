@@ -114,6 +114,81 @@ def test_geocode_http_error(monkeypatch):
         geo.reverse_geocode(1.0, 1.0)
 
 
+FOOD_STAND_JSON = {
+    "category": "amenity",
+    "type": "fast_food",
+    "name": "Freshnez",
+    "address": {
+        "amenity": "Freshnez",
+        "road": "Woodall Rodgers Freeway",
+        "neighbourhood": "Klyde Warren Park-Arts District PID",
+        "quarter": "Downtown PID",
+        "city": "Dallas",
+        "state": "Texas",
+        "country": "United States",
+    },
+}
+
+
+def patch_routes(monkeypatch, nominatim, overpass):
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        reply = nominatim if url == geo.NOMINATIM_URL else overpass
+        if isinstance(reply, Exception):
+            raise reply
+        return FakeResp(reply)
+
+    monkeypatch.setattr(geo.requests, "get", fake_get)
+    return calls
+
+
+def test_small_venue_is_upgraded_to_the_enclosing_park(monkeypatch):
+    overpass = {"elements": [{"tags": {"leisure": "park", "name": "Klyde Warren Park"}}]}
+    calls = patch_routes(monkeypatch, FOOD_STAND_JSON, overpass)
+    place = geo.reverse_geocode(32.7894, -96.8014)
+    assert place.label == "Klyde Warren Park, Dallas, Texas"
+    assert place.venue == "Klyde Warren Park"
+    assert calls == [geo.NOMINATIM_URL, geo.OVERPASS_URL]
+
+
+def test_landmark_priority_prefers_the_attraction(monkeypatch):
+    elements = [
+        {"tags": {"leisure": "park", "name": "Fair Park"}},
+        {"tags": {"tourism": "museum", "name": "Hall of State"}},
+    ]
+    patch_get(monkeypatch, geo, {"elements": elements})
+    assert geo.enclosing_landmark(1.0, 1.0, user_agent="ua") == "Hall of State"
+
+
+def test_busy_overpass_server_falls_through_to_a_mirror(monkeypatch):
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        if url == geo.OVERPASS_URLS[0]:
+            return FakeResp({}, status=500)
+        return FakeResp({"elements": [{"tags": {"leisure": "park", "name": "Klyde Warren Park"}}]})
+
+    monkeypatch.setattr(geo.requests, "get", fake_get)
+    assert geo.enclosing_landmark(32.7894, -96.8014, user_agent="ua") == "Klyde Warren Park"
+    assert calls == list(geo.OVERPASS_URLS[:2])
+
+
+def test_landmark_lookup_failure_keeps_the_nominatim_answer(monkeypatch):
+    patch_routes(monkeypatch, FOOD_STAND_JSON, requests.Timeout("slow"))
+    place = geo.reverse_geocode(32.7894, -96.8014)
+    assert place.label == "Freshnez, Dallas, Texas"
+    assert place.neighborhood is None  # "... PID" districts are not caption material
+
+
+def test_parks_skip_the_landmark_lookup(monkeypatch):
+    calls = patch_routes(monkeypatch, PARK_JSON, {"elements": []})
+    geo.reverse_geocode(32.7894, -96.8014)
+    assert calls == [geo.NOMINATIM_URL]
+
+
 # ------------------------------------------------------------------- weather
 def weather_payload(day="2026-10-10"):
     codes = [3] * 24
