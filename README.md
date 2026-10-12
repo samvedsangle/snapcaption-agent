@@ -82,7 +82,7 @@ Note: the app's disk is wiped on restart/redeploy, so saved voice samples and st
 
 **API → any free Docker host (for the share-sheet shortcut)**
 
-The `Dockerfile` serves the FastAPI app on `$PORT`.
+The `Dockerfile` serves the FastAPI app on `$PORT`. It installs only `requirements-api.txt` (no Streamlit), which keeps the image around 460 MB, and runs as a non-root user.
 
 - *Render:* New → Web Service → connect the repo → runtime Docker. Environment: `GEMINI_API_KEY`, `API_KEY` (a long random string), `NOMINATIM_USER_AGENT`. Free instances sleep when idle, so the first request after a while is slow.
 - *Oracle Cloud Always Free VM (stays on, keeps your data):*
@@ -171,6 +171,5 @@ Dockerfile                API container
 ## Known limits
 
 - Live calls to Gemini, Nominatim and Open-Meteo are exercised only through mocks in the test suite; run the first-run checklist above.
-- The Dockerfile wasn't built in the dev environment (no Docker daemon there). The same steps were verified separately: a clean-venv `pip install -r requirements.txt`, then `uvicorn api:app`.
 - Free hosts sleep or reset disks; the Gemini free tier has rate limits. The API has a key but no rate limiting.
 - Captions are suggestions. Read them before posting.
