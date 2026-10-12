@@ -67,14 +67,14 @@ class FakeLLM:
             "caption_angles": ["weekend reset", "city glow"],
         }
 
-    def vision_json(self, image_bytes, mime, prompt, temperature=0.2):
+    def vision_json(self, image_bytes, mime, prompt, temperature=0.2, schema=None):
         self.vision_calls += 1
         self.prompts.append(prompt)
         if self.vision_error:
             raise self.vision_error
         return self.vision
 
-    def text_json(self, prompt, temperature=0.7):
+    def text_json(self, prompt, temperature=0.7, schema=None):
         self.prompts.append(prompt)
         if "TASK: WRITE_CAPTIONS" in prompt:
             if self.empty_captions:

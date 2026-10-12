@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from snapcaption.config import Settings
-from snapcaption.llm import AnthropicLLM, GeminiLLM, LLMError, get_llm, parse_json
+from snapcaption.llm import AnthropicLLM, GeminiLLM, LLMError, OllamaLLM, get_llm, parse_json
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +40,31 @@ def test_get_llm_needs_a_key():
 def test_get_llm_builds_the_right_class():
     assert isinstance(get_llm(Settings(provider="gemini", gemini_api_key="k")), GeminiLLM)
     assert isinstance(get_llm(Settings(provider="anthropic", anthropic_api_key="k")), AnthropicLLM)
+    assert isinstance(get_llm(Settings(provider="ollama")), OllamaLLM)  # local: no key needed
+
+
+# -------------------------------------------------------------------- Ollama
+class FakeOllamaSession:
+    def __init__(self, replies):
+        self.replies, self.calls = list(replies), []
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append({"url": url, "json": json})
+        reply = self.replies.pop(0)
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"message": {"content": reply}})
+
+
+def test_ollama_request_shape_and_image():
+    session = FakeOllamaSession(['{"ok": true}', '{"scene": "x"}'])
+    llm = OllamaLLM("http://box:11434/", "gemma3:4b", client=session)
+    assert llm.text_json("hello", temperature=0.4) == {"ok": True}
+    llm.vision_json(b"abc", "image/jpeg", "describe")
+    text_call, vision_call = session.calls
+    assert text_call["url"] == "http://box:11434/api/chat"
+    body = text_call["json"]
+    assert body["model"] == "gemma3:4b" and body["format"] == "json" and body["stream"] is False
+    assert body["options"]["temperature"] == 0.4
+    assert vision_call["json"]["messages"][0]["images"] == ["YWJj"]
 
 
 # -------------------------------------------------------------------- Gemini

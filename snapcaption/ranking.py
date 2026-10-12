@@ -16,8 +16,15 @@ CLICHES = (
     "best life", "good vibes only", "no filter", "nofilter", "making memories",
     "views for days", "adventure awaits", "wanderlust", "blessed", "living my best",
     "life is better", "chasing sunsets", "but first, coffee", "happy place",
+    # lines that read as machine-written rather than human
+    "lost in the beauty", "this view is everything", "soaking up", "urban oasis", "amidst",
+    "embrace the", "dreaming in color", "city buzz", "unforgettable", "breathtaking",
 )  # fmt: skip
-PENALTIES = {"too_short": 10.0, "very_long": 3.0, "long": 1.0, "cliche": 2.0, "hashtag": 1.5}
+PENALTIES = {
+    "too_short": 10.0, "very_long": 3.0, "long": 1.0, "cliche": 2.0, "hashtag": 1.5, "slogan": 2.0,
+}  # fmt: skip
+# "Explore. Discover. Repeat." style: three or more one-word sentences in a row.
+_SLOGAN = re.compile(r"^(?:\s*\w+[.!]){3,}\s*$")
 _WORD = re.compile(r"\w+")
 
 
@@ -35,6 +42,8 @@ def heuristic_penalty(text: str, platform: str = "instagram") -> tuple[float, li
     lower = clean.lower()
     if any(c in lower for c in CLICHES):
         flags.append("cliche")
+    if _SLOGAN.match(clean):
+        flags.append("slogan")
     if re.search(r"(^|\s)#\w", clean):
         flags.append("hashtag")  # tags go in the hashtag block, not the caption
     return sum(PENALTIES[f] for f in flags), flags

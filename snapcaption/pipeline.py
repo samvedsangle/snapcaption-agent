@@ -10,6 +10,7 @@ Image analysis runs alongside the EXIF → place / weather branch; writing waits
 from __future__ import annotations
 
 import operator
+import re
 import time
 from dataclasses import dataclass
 from typing import Annotated, Any, Callable, Optional, TypedDict
@@ -28,6 +29,8 @@ from .tools.timectx import build_time_context
 
 MIN_CAPTIONS, MAX_CAPTIONS = 3, 15
 PER_STYLE_CAP = 3
+# Models sometimes echo Instagram's "... more" fold after a finished sentence.
+_TRAILING_MORE = re.compile(r"([.!?…])\s*(?:\.\.\.|…)?\s*more$", re.I)
 
 
 class PipelineError(RuntimeError):
@@ -39,6 +42,9 @@ class Deps:
     llm: Any  # has vision_json(...) and text_json(...)
     geocode: Callable[[float, float], Place]
     weather: Callable[[float, float, str], Weather]
+    # The critic call adds little with a small local model and roughly doubles its run time;
+    # without it, captions are ranked by the plain-code rules alone.
+    use_critic: bool = True
 
 
 def _merge(a: dict, b: dict) -> dict:
@@ -91,7 +97,7 @@ def _build_graph(deps: Deps):
 
     def node_analyze_image(state: State) -> dict:
         jpeg, mime = prepare_for_llm(state["image"])
-        vision = deps.llm.vision_json(jpeg, mime, prompts.VISION_PROMPT)
+        vision = deps.llm.vision_json(jpeg, mime, prompts.VISION_PROMPT, schema=prompts.VISION_SCHEMA)
         return {"vision": vision if isinstance(vision, dict) else {}}
 
     def node_lookup_place(state: State) -> dict:
@@ -155,7 +161,7 @@ def _build_graph(deps: Deps):
             voice_samples=state.get("voice_samples"),
             count=max(25, state["n"] * 2 + 5),
         )
-        resp = deps.llm.text_json(prompt, temperature=0.9)
+        resp = deps.llm.text_json(prompt, temperature=0.9, schema=prompts.WRITER_SCHEMA)
 
         candidates = []
         for item in resp.get("captions") or []:
@@ -163,7 +169,7 @@ def _build_graph(deps: Deps):
                 item = {"text": item, "style": "other"}
             if not isinstance(item, dict):
                 continue
-            text = str(item.get("text") or "").strip()
+            text = _TRAILING_MORE.sub(r"\1", str(item.get("text") or "").strip())
             if text:
                 candidates.append({"text": text, "style": str(item.get("style") or "other")})
         if not candidates:
@@ -171,6 +177,8 @@ def _build_graph(deps: Deps):
         return {"candidates": candidates, "hashtag_pool": resp.get("hashtags") or {}}
 
     def node_score_captions(state: State) -> dict:
+        if not deps.use_critic:
+            return {"scores": {}}
         candidates = state["candidates"]
         prompt = prompts.critic_prompt(
             candidates=candidates,
@@ -179,7 +187,7 @@ def _build_graph(deps: Deps):
         )
         scores: dict[int, dict] = {}
         try:
-            resp = deps.llm.text_json(prompt, temperature=0.2)
+            resp = deps.llm.text_json(prompt, temperature=0.2, schema=prompts.CRITIC_SCHEMA)
             for item in resp.get("scores") or []:
                 try:
                     i = int(item["i"])

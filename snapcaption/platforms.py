@@ -22,7 +22,7 @@ PLATFORMS: dict[str, Platform] = {
         "instagram",
         150,
         {"location": 2, "niche": 2, "mid": 2, "broad": 2},
-        "First line is the hook; the rest hides behind 'more'.",
+        "Only the first line shows in the feed, so make it count.",
     ),
     "tiktok": Platform(
         "tiktok",

@@ -61,6 +61,14 @@ def test_cliche_and_hashtag_are_penalised():
     assert "cliche" in next(c for c in top if "best life" in c["text"])["flags"]
 
 
+def test_machine_sounding_lines_are_penalised():
+    _, flags = heuristic_penalty("Explore. Discover. Repeat.", "instagram")
+    assert "slogan" in flags
+    _, flags = heuristic_penalty("Lost in the beauty of it all", "instagram")
+    assert "cliche" in flags
+    assert heuristic_penalty("came for tacos, stayed for the skyline", "instagram") == (0, [])
+
+
 def test_length_penalty_depends_on_platform():
     text = "x" * 170
     ig, _ = heuristic_penalty(text, "instagram")  # limit 150: long
@@ -141,3 +149,10 @@ def test_location_tags_from_geocoded_place():
 def test_country_is_the_last_resort_location_tag():
     assert location_tags(Place(label="Iceland", country="Iceland", source="exif")) == ["iceland"]
     assert location_tags(Place()) == []
+
+
+def test_misspelled_and_plural_near_copies_are_dropped():
+    tags = build_hashtags({"niche": ["klyderenpark", "cityscapes", "cityscape", "dallasparks"]}, PARK, "instagram")
+    assert "#klyderenpark" not in tags["all"] and "#klydewarrenpark" in tags["all"]
+    assert tags["all"].count("#cityscape") + tags["all"].count("#cityscapes") == 1
+    assert "#dallasparks" in tags["all"]  # related, but not a copy of #dallas

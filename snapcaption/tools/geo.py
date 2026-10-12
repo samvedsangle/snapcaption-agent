@@ -16,6 +16,8 @@ from ..schemas import Place
 from . import ToolError
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
+_PARK_SEARCH_RADIUS = 0.005  # degrees (about 500 m) around the photo
 # Free public Overpass servers. They are often busy, so each gets a short try in turn.
 OVERPASS_URLS = (
     "https://overpass.private.coffee/api/interpreter",
@@ -115,6 +117,53 @@ def _with_venue(place: Place, venue: str) -> Place:
     )
 
 
+def _wait_for_nominatim() -> None:
+    """Nominatim usage policy: at most one request per second from this app."""
+    global _last_call
+    with _lock:
+        wait = _MIN_INTERVAL - (time.monotonic() - _last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call = time.monotonic()
+
+
+def _park_containing(lat: float, lon: float, *, user_agent: str) -> str | None:
+    """Smallest named park whose bounding box contains the point (Nominatim search)."""
+    d = _PARK_SEARCH_RADIUS
+    _wait_for_nominatim()
+    try:
+        resp = requests.get(
+            NOMINATIM_SEARCH_URL,
+            params={
+                "format": "jsonv2",
+                "q": "park",
+                "bounded": 1,
+                "limit": 10,
+                "viewbox": f"{lon - d},{lat + d},{lon + d},{lat - d}",
+            },
+            headers={"User-Agent": user_agent, "Accept-Language": "en"},
+            timeout=6.0,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+    except Exception:  # noqa: BLE001 - only an upgrade to the label
+        return None
+    if not isinstance(results, list):
+        return None
+
+    best, best_area = None, float("inf")
+    for r in results:
+        try:
+            south, north, west, east = (float(x) for x in r["boundingbox"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if r.get("name") and south <= lat <= north and west <= lon <= east:
+            area = (north - south) * (east - west)
+            if area < best_area:
+                best, best_area = str(r["name"]), area
+    return best
+
+
 def _overpass_elements(query: str, user_agent: str) -> list | None:
     deadline = time.monotonic() + _OVERPASS_BUDGET
     for url in OVERPASS_URLS:
@@ -136,7 +185,13 @@ def _overpass_elements(query: str, user_agent: str) -> list | None:
 
 
 def enclosing_landmark(lat: float, lon: float, *, user_agent: str) -> str | None:
-    """Name of a park or landmark the point lies inside (Overpass API). Never raises."""
+    """Name of a park or landmark the point lies inside. Never raises.
+
+    Nominatim's park search answers reliably; the busier Overpass servers are the fallback
+    and also cover attractions, historic sites and beaches."""
+    park = _park_containing(lat, lon, user_agent=user_agent)
+    if park:
+        return park
     elements = _overpass_elements(_LANDMARK_QUERY.format(lat=lat, lon=lon), user_agent)
     if not elements:
         return None
@@ -155,17 +210,13 @@ def reverse_geocode(
     user_agent: str = "snapcaption/0.1",
     timeout: float = 8.0,
 ) -> Place:
-    global _last_call
     key = (round(lat, 4), round(lon, 4))  # about 10 m; also the cache key
 
     with _lock:
         cached = _cache.get(key)
-        if cached is not None:
-            return cached
-        wait = _MIN_INTERVAL - (time.monotonic() - _last_call)
-        if wait > 0:
-            time.sleep(wait)
-        _last_call = time.monotonic()
+    if cached is not None:
+        return cached
+    _wait_for_nominatim()
 
     try:
         resp = requests.get(

@@ -85,10 +85,12 @@ class GeminiLLM(_BaseLLM):
         )
         return resp.text
 
-    def text_json(self, prompt: str, temperature: float = 0.7) -> dict:
+    def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:
         return self._json_with_retries(lambda: self._call([prompt], temperature))
 
-    def vision_json(self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2) -> dict:
+    def vision_json(
+        self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2, schema: Optional[dict] = None
+    ) -> dict:
         from google.genai import types
 
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime)
@@ -133,10 +135,12 @@ class AnthropicLLM(_BaseLLM):
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )
 
-    def text_json(self, prompt: str, temperature: float = 0.7) -> dict:
+    def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:
         return self._json_with_retries(lambda: self._call(prompt))
 
-    def vision_json(self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2) -> dict:
+    def vision_json(
+        self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2, schema: Optional[dict] = None
+    ) -> dict:
         content = [
             {
                 "type": "image",
@@ -149,6 +153,50 @@ class AnthropicLLM(_BaseLLM):
             {"type": "text", "text": prompt},
         ]
         return self._json_with_retries(lambda: self._call(content))
+
+
+class OllamaLLM(_BaseLLM):
+    """A local model through Ollama (https://ollama.com): free, no key, photos never leave
+    the machine. Needs a vision model such as gemma3:4b for the image step."""
+
+    name = "Ollama"
+    timeout = 300.0  # small local models on a laptop can take a while for 25 captions
+    num_ctx = 6144
+
+    def __init__(self, host: str, model: str, client: Any = None):
+        if client is None:
+            import requests
+
+            client = requests.Session()
+        self.client, self.model, self.host = client, model, host.rstrip("/")
+
+    def _call(self, message: dict, temperature: float, schema: Optional[dict]) -> Optional[str]:
+        resp = self.client.post(
+            f"{self.host}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [message],
+                "format": schema or "json",  # a schema keeps small models from answering "{}"
+                "stream": False,
+                "options": {"temperature": temperature, "num_ctx": self.num_ctx},
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return (resp.json().get("message") or {}).get("content")
+
+    def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:
+        return self._json_with_retries(
+            lambda: self._call({"role": "user", "content": prompt}, temperature, schema)
+        )
+
+    def vision_json(
+        self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2, schema: Optional[dict] = None
+    ) -> dict:
+        image = base64.standard_b64encode(image_bytes).decode("ascii")
+        return self._json_with_retries(
+            lambda: self._call({"role": "user", "content": prompt, "images": [image]}, temperature, schema)
+        )
 
 
 def get_llm(settings: Settings):
@@ -164,4 +212,8 @@ def get_llm(settings: Settings):
         if not settings.anthropic_api_key:
             raise LLMError("ANTHROPIC_API_KEY is not set. Add it to .env (or your host's secrets).")
         return AnthropicLLM(settings.anthropic_api_key, settings.anthropic_model)
-    raise LLMError(f"Unknown LLM_PROVIDER {settings.provider!r}. Use 'gemini' or 'anthropic'.")
+    if provider == "ollama":
+        return OllamaLLM(settings.ollama_host, settings.ollama_model)
+    raise LLMError(
+        f"Unknown LLM_PROVIDER {settings.provider!r}. Use 'gemini', 'anthropic' or 'ollama'."
+    )

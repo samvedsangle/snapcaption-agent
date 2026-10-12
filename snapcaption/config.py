@@ -17,6 +17,8 @@ class Settings:
     gemini_model: str = "gemini-2.5-flash"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "gemma3:4b"
     api_key: str = ""  # protects the HTTP API; empty means open
     db_path: str = "data/snapcaption.db"
     nominatim_user_agent: str = "snapcaption/0.1"
@@ -44,6 +46,8 @@ def load_settings() -> Settings:
         gemini_model=(env("GEMINI_MODEL") or d.gemini_model).strip(),
         anthropic_api_key=(env("ANTHROPIC_API_KEY") or "").strip(),
         anthropic_model=(env("ANTHROPIC_MODEL") or d.anthropic_model).strip(),
+        ollama_host=(env("OLLAMA_HOST") or d.ollama_host).strip(),
+        ollama_model=(env("OLLAMA_MODEL") or d.ollama_model).strip(),
         api_key=(env("API_KEY") or "").strip(),
         db_path=(env("DB_PATH") or d.db_path).strip(),
         nominatim_user_agent=(env("NOMINATIM_USER_AGENT") or d.nominatim_user_agent).strip(),

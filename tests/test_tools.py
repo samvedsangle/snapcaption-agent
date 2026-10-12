@@ -150,7 +150,8 @@ def test_small_venue_is_upgraded_to_the_enclosing_park(monkeypatch):
     place = geo.reverse_geocode(32.7894, -96.8014)
     assert place.label == "Klyde Warren Park, Dallas, Texas"
     assert place.venue == "Klyde Warren Park"
-    assert calls == [geo.NOMINATIM_URL, geo.OVERPASS_URL]
+    # Nominatim's park search found nothing usable in this fake, so Overpass answered
+    assert calls == [geo.NOMINATIM_URL, geo.NOMINATIM_SEARCH_URL, geo.OVERPASS_URL]
 
 
 def test_landmark_priority_prefers_the_attraction(monkeypatch):
@@ -173,7 +174,25 @@ def test_busy_overpass_server_falls_through_to_a_mirror(monkeypatch):
 
     monkeypatch.setattr(geo.requests, "get", fake_get)
     assert geo.enclosing_landmark(32.7894, -96.8014, user_agent="ua") == "Klyde Warren Park"
-    assert calls == list(geo.OVERPASS_URLS[:2])
+    assert calls == [geo.NOMINATIM_SEARCH_URL, *geo.OVERPASS_URLS[:2]]
+
+
+def test_park_search_wins_and_ignores_parks_the_photo_is_not_in(monkeypatch):
+    search = [
+        {"name": "Betty Marcus Park", "boundingbox": ["32.7900", "32.7920", "-96.8040", "-96.8020"]},
+        {"name": "Klyde Warren Park", "boundingbox": ["32.7880", "32.7905", "-96.8030", "-96.7990"]},
+        {"name": "Downtown Green", "boundingbox": ["32.7000", "32.9000", "-96.9000", "-96.7000"]},
+    ]
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        return FakeResp(search if url == geo.NOMINATIM_SEARCH_URL else {"elements": []})
+
+    monkeypatch.setattr(geo.requests, "get", fake_get)
+    # Betty Marcus doesn't contain the point; of the two that do, the smaller one wins
+    assert geo.enclosing_landmark(32.7894, -96.8014, user_agent="ua") == "Klyde Warren Park"
+    assert calls == [geo.NOMINATIM_SEARCH_URL]  # no need to wait on Overpass
 
 
 def test_landmark_lookup_failure_keeps_the_nominatim_answer(monkeypatch):

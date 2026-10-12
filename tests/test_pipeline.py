@@ -145,3 +145,11 @@ def test_photo_taken_without_sun_data_still_gets_time_of_day():
     result = run_pipeline(jpeg, deps=deps)
     assert result["context"]["time"]["part_of_day"] == "evening"
     assert deps.calls.weather == []
+
+
+def test_critic_can_be_switched_off_without_a_warning(jpeg_gps):
+    deps = make_deps()
+    deps.use_critic = False
+    result = run_pipeline(jpeg_gps, deps=deps)
+    assert len(result["captions"]) == 10 and result["warnings"] == []
+    assert not any("TASK: SCORE_CAPTIONS" in p for p in deps.llm.prompts)

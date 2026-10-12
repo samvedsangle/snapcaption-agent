@@ -32,6 +32,7 @@ def default_deps(settings: Settings) -> Deps:
         llm=get_llm(settings),
         geocode=lambda lat, lon: reverse_geocode(lat, lon, user_agent=settings.nominatim_user_agent),
         weather=lambda lat, lon, taken: fetch_weather(lat, lon, taken, unit=settings.temp_unit),
+        use_critic=settings.provider != "ollama",
     )
 
 

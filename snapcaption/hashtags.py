@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from typing import Optional
 
 from .platforms import get_platform
 from .schemas import Place
 
 TIERS = ("location", "niche", "mid", "broad")
+_NEAR_DUPLICATE = 0.85  # "klyderenpark" (a model typo) vs "klydewarrenpark", "cityscapes" vs "cityscape"
 _MIN_LEN, _MAX_LEN = 2, 30
 _BAIT = re.compile(r"^(like|follow|comment|share|tag|sub)s?(4|for)(like|follow|comment|share|tag|sub)s?$")
 _BANNED = {
@@ -65,6 +67,10 @@ def _pool_list(value) -> list[str]:
     return _dedupe(sanitize_tag(item) for item in items)
 
 
+def _near_duplicate(tag: str, chosen: set[str]) -> bool:
+    return any(SequenceMatcher(None, tag, other).ratio() >= _NEAR_DUPLICATE for other in chosen)
+
+
 def build_hashtags(pool, place: Optional[Place], platform: str) -> dict[str, list[str]]:
     """Pick tags tier by tier: each tier's quota first, then fill any leftover budget."""
     spec = get_platform(platform)
@@ -81,7 +87,7 @@ def build_hashtags(pool, place: Optional[Place], platform: str) -> dict[str, lis
         for tag in sources[tier]:
             if len(seen) >= total or len(chosen[tier]) >= limit:
                 return
-            if tag not in seen:
+            if tag not in seen and not _near_duplicate(tag, seen):
                 seen.add(tag)
                 chosen[tier].append(tag)
 
