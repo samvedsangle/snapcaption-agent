@@ -14,9 +14,11 @@ load_dotenv(override=False)  # real environment variables always win
 class Settings:
     provider: str = "gemini"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-flash-latest"  # follows the current Flash model
-    # Tried in order when a model is overloaded or out of free quota.
-    gemini_fallbacks: tuple[str, ...] = ("gemini-3.5-flash", "gemini-flash-lite-latest")
+    # Flash-Lite answers in seconds with captions as good as Flash's; the -latest aliases
+    # follow Google's current models, so a retirement can't break the app.
+    gemini_model: str = "gemini-flash-lite-latest"
+    # Tried in order when a model is overloaded, out of free quota or too slow.
+    gemini_fallbacks: tuple[str, ...] = ("gemini-flash-latest", "gemini-3.5-flash")
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
     ollama_host: str = "http://localhost:11434"

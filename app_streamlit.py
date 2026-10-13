@@ -74,7 +74,7 @@ def render_captions(user_id: str, include_tags: bool) -> None:
         pass
 
     try:
-        with st.spinner("Reading the photo, place and light..."):
+        with st.spinner("Reading the photo, place and light... (usually 10 to 20 seconds)"):
             result = _generate(
                 hashlib.sha256(data).hexdigest()[:16],
                 data,

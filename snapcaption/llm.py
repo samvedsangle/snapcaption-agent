@@ -58,7 +58,10 @@ class _BaseLLM:
         raise LLMError(f"{self.name} request failed: {last}") from last
 
 
-_BUSY_SIGNS = ("503", "429", "unavailable", "resource_exhausted", "high demand", "overloaded", "quota")
+_BUSY_SIGNS = (
+    "503", "429", "unavailable", "resource_exhausted", "high demand", "overloaded", "quota",
+    "timed out", "timeout", "deadline",
+)  # fmt: skip
 
 
 def _is_busy(error: BaseException | None) -> bool:
@@ -72,12 +75,14 @@ class GeminiLLM(_BaseLLM):
     the fallback chain answers instead (free-tier models get overloaded at peak times)."""
 
     name = "Gemini"
+    timeout_ms = 45_000  # a stuck call moves on to the next model instead of hanging the page
 
     def __init__(self, api_key: str, model: str, client: Any = None, fallbacks: tuple[str, ...] = ()):
         if client is None:
             from google import genai
+            from google.genai import types
 
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=self.timeout_ms))
         self.client, self.model = client, model
         self.models = [model] + [m for m in fallbacks if m and m != model]
         self._no_thinking: set[str] = set()  # models that rejected our thinking setting
@@ -112,18 +117,26 @@ class GeminiLLM(_BaseLLM):
         return resp.text
 
     def _generate(self, contents: list, temperature: float) -> dict:
-        busy: LLMError | None = None
-        for model in self.models:
-            try:
-                return self._json_with_retries(lambda m=model: self._call(m, contents, temperature))
-            except LLMError as e:
-                if not _is_busy(e.__cause__):
-                    raise
-                busy = e
-        detail = str(busy.__cause__)[:160] if busy else ""
+        """Try each model in turn. A busy or timed-out model hands over to the next one at once
+        (waiting on it is what makes the page feel stuck); other errors get one retry."""
+        last: Exception | None = None
+        for position, model in enumerate(self.models):
+            has_backup = position < len(self.models) - 1
+            for attempt in range(self.attempts):
+                try:
+                    return parse_json(self._call(model, contents, temperature))
+                except Exception as e:  # noqa: BLE001 - SDK errors vary
+                    last = e
+                    if _is_busy(e) and has_backup:
+                        break
+                    if attempt < self.attempts - 1:
+                        time.sleep(self.backoff * (attempt + 1))
+            else:
+                if not _is_busy(last):
+                    raise LLMError(f"{self.name} request failed: {last}") from last
         raise LLMError(
-            f"Gemini's free models are busy right now ({detail}). Wait a minute and try again."
-        ) from busy
+            f"Gemini's free models are busy right now ({str(last)[:160]}). Wait a minute and try again."
+        ) from last
 
     def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:
         return self._generate([prompt], temperature)

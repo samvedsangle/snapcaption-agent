@@ -130,10 +130,17 @@ def test_gemini_retries_after_an_api_error_and_bad_json():
 
 
 def test_busy_gemini_model_falls_back_to_the_next_one():
-    models = FakeGeminiModels([RuntimeError("503 UNAVAILABLE high demand")] * 2 + ['{"ok": 1}'])
-    llm = GeminiLLM("key", "main-model", client=SimpleNamespace(models=models), fallbacks=("lite-model",))
+    models = FakeGeminiModels([RuntimeError("503 UNAVAILABLE high demand"), '{"ok": 1}'])
+    llm = GeminiLLM("key", "main-model", client=SimpleNamespace(models=models), fallbacks=("backup-model",))
     assert llm.text_json("p") == {"ok": 1}
-    assert [c["model"] for c in models.calls] == ["main-model", "main-model", "lite-model"]
+    # no second try on the busy model: the backup answers straight away
+    assert [c["model"] for c in models.calls] == ["main-model", "backup-model"]
+
+
+def test_a_timed_out_model_hands_over_too():
+    models = FakeGeminiModels([TimeoutError("The read operation timed out"), '{"ok": 1}'])
+    llm = GeminiLLM("key", "main-model", client=SimpleNamespace(models=models), fallbacks=("backup-model",))
+    assert llm.text_json("p") == {"ok": 1}
 
 
 def test_non_capacity_errors_do_not_fall_back():
