@@ -184,15 +184,8 @@ tests/                    fake model + fake services; 100+ tests
 Dockerfile                API container
 ```
 
-## Resume bullets (fill in your real numbers)
-
-- Built **SnapCaption**, a multimodal LangGraph agent that turns one photo into 10 ranked, voice-matched captions and tiered hashtags: EXIF → reverse-geocoding, weather and golden-hour context, parallel tool branches, generator + critic ranking with deterministic diversity rules.
-- Shipped as a Streamlit app and a FastAPI endpoint driven from the iOS share sheet; privacy by design (metadata stripped before model calls, no photos or coordinates stored).
-- Instrumented a feedback loop (top-3 pick rate, style win-rate, likes by style). Across **[N]** posts, **[X%]** of used captions came from the top 3 ranked vs a 30% random baseline. *(Use your real numbers from the Results tab.)*
-- 100+ automated tests with a fake LLM and mocked services; graceful degradation when GPS, geocoder, weather or the critic model fail.
-
 ## Known limits
 
-- Live calls to Gemini, Nominatim and Open-Meteo are exercised only through mocks in the test suite; run the first-run checklist above.
+- The automated tests mock Gemini, Nominatim and Open-Meteo; run the first-run checklist above once with a real key.
 - Free hosts sleep or reset disks; the Gemini free tier has rate limits. The API has a key but no rate limiting.
 - Captions are suggestions. Read them before posting.
