@@ -11,7 +11,9 @@ from . import ToolError
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-_FORECAST_WINDOW_DAYS = 80  # the forecast endpoint serves roughly the last 92 days
+# The forecast endpoint has full hourly data for recent days only (it returns nulls for
+# temperatures a couple of months back); the archive covers everything else.
+_FORECAST_WINDOW_DAYS = 14
 
 WMO_CODES = {
     0: "clear sky",
@@ -68,7 +70,8 @@ def fetch_weather(
 
     today = today or date.today()
     recent = (today - taken.date()).days <= _FORECAST_WINDOW_DAYS
-    url = FORECAST_URL if recent else ARCHIVE_URL
+    # The preferred endpoint first; if it fails or lacks that hour, the other one.
+    urls = (FORECAST_URL, ARCHIVE_URL) if recent else (ARCHIVE_URL, FORECAST_URL)
 
     params = {
         "latitude": round(lat, 2),  # about 1 km is plenty for weather
@@ -80,23 +83,32 @@ def fetch_weather(
         "temperature_unit": unit,
         "timezone": "auto",  # hourly times come back in the photo's local time
     }
-    try:
-        resp = requests.get(url, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-    except (requests.RequestException, ValueError) as e:
-        raise ToolError(f"weather unavailable ({e.__class__.__name__})") from e
-
-    hourly = (data or {}).get("hourly") or {}
-    times = hourly.get("time") or []
-
     nearest = taken.replace(minute=0, second=0, microsecond=0)
     if taken.minute >= 30:
         nearest += timedelta(hours=1)
     wanted = [nearest.strftime("%Y-%m-%dT%H:00"), taken.strftime("%Y-%m-%dT%H:00")]
-    idx = next((times.index(w) for w in wanted if w in times), None)
-    if idx is None:
-        raise ToolError("no weather data for that hour")
+
+    problem = "no weather data for that hour"
+    for url in urls:
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json() or {}
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", None)
+            problem = f"weather unavailable (HTTP {status})" if status else f"weather unavailable ({e})"
+            continue
+        except (requests.RequestException, ValueError) as e:
+            problem = f"weather unavailable ({e.__class__.__name__})"
+            continue
+        hourly = data.get("hourly") or {}
+        times = hourly.get("time") or []
+        idx = next((times.index(w) for w in wanted if w in times), None)
+        if idx is not None and _at(hourly.get("temperature_2m"), idx) is not None:
+            break
+        problem = "no weather data for that hour"
+    else:
+        raise ToolError(problem)
 
     temp = _at(hourly.get("temperature_2m"), idx)
     code = _at(hourly.get("weather_code"), idx)
@@ -110,7 +122,7 @@ def fetch_weather(
     if temp is not None:
         bits.append(f"{round(temp)}°{symbol}")
 
-    daily = (data or {}).get("daily") or {}
+    daily = data.get("daily") or {}
     return Weather(
         summary=", ".join(bits),
         temp=temp,

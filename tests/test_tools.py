@@ -13,7 +13,11 @@ class FakeResp:
 
     def raise_for_status(self):
         if self.status >= 400:
-            raise requests.HTTPError(f"HTTP {self.status}")
+            raise requests.HTTPError(f"HTTP {self.status}", response=self)
+
+    @property
+    def status_code(self):
+        return self.status
 
     def json(self):
         return self.payload
@@ -305,3 +309,31 @@ def test_no_sun_times_means_no_golden_claim():
 def test_southern_hemisphere_season_flips():
     assert build_time_context("2026-12-25T10:00:00", lat=-33.9).season == "summer"
     assert build_time_context("2026-12-25T10:00:00", lat=40.0).season == "winter"
+
+
+def test_weather_falls_back_to_the_other_endpoint(monkeypatch):
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        return FakeResp({}, status=429) if url == weather.FORECAST_URL else FakeResp(weather_payload())
+
+    monkeypatch.setattr(weather.requests, "get", fake_get)
+    w = weather.fetch_weather(1.0, 1.0, "2026-10-10T18:05:00", today=date(2026, 10, 12))
+    assert w.summary == "clear sky, 78°F"
+    assert calls == [weather.FORECAST_URL, weather.ARCHIVE_URL]
+
+
+def test_weather_error_names_the_http_status(monkeypatch):
+    patch_get(monkeypatch, weather, {}, status=429)
+    with pytest.raises(ToolError, match="HTTP 429"):
+        weather.fetch_weather(1.0, 1.0, "2026-10-10T18:05:00", today=date(2026, 10, 12))
+
+
+def test_forecast_nulls_send_the_lookup_to_the_archive(monkeypatch):
+    empty = weather_payload()
+    empty["hourly"]["temperature_2m"] = [None] * 24
+    calls = patch_get(monkeypatch, weather, empty)
+    with pytest.raises(ToolError, match="no weather data"):
+        weather.fetch_weather(1.0, 1.0, "2026-10-10T18:05:00", today=date(2026, 10, 12))
+    assert [c["url"] for c in calls] == [weather.FORECAST_URL, weather.ARCHIVE_URL]
