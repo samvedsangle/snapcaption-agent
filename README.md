@@ -2,6 +2,12 @@
 
 Drop in a photo, get **10 ranked captions plus hashtags** that fit the place, the light and your own voice. No copy-pasting between AI chat apps.
 
+**[▶ Try it live](https://snapcaption-agent-omkx5xqfhdkvprsmj3yxja.streamlit.app/)** · **[🎥 Watch the full demo (62s)](https://github.com/samvedsangle/snapcaption-agent/releases/download/v1.0/SnapCaption-demo.mp4)**
+
+[![SnapCaption demo: a snowy photo from Dallas goes in, the app reads the place, weather and light, and writes captions](docs/demo.gif)](https://github.com/samvedsangle/snapcaption-agent/releases/download/v1.0/SnapCaption-demo.mp4)
+
+*Every screen in the demo is the real app running live; every caption is exactly what it wrote.*
+
 Two ways to use it, one engine:
 
 - **Web app (Streamlit):** open the link, drop a photo, captions appear on their own. One tap copies caption + hashtags.
