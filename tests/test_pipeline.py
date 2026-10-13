@@ -153,3 +153,14 @@ def test_critic_can_be_switched_off_without_a_warning(jpeg_gps):
     result = run_pipeline(jpeg_gps, deps=deps)
     assert len(result["captions"]) == 10 and result["warnings"] == []
     assert not any("TASK: SCORE_CAPTIONS" in p for p in deps.llm.prompts)
+
+
+def test_alt_text_falls_back_to_the_scene_and_english_adds_no_language_rule(jpeg_gps, deps):
+    result = run_pipeline(jpeg_gps, deps=deps)
+    assert result["alt_text"] == deps.llm.vision["scene"] and result["language"] == "English"
+    assert "Write every caption in" not in deps.llm.prompts[-2]
+
+
+def test_long_notes_are_trimmed(jpeg_gps, deps):
+    run_pipeline(jpeg_gps, note="x" * 1000, deps=deps)
+    assert "x" * 300 in deps.llm.prompts[-2] and "x" * 301 not in deps.llm.prompts[-2]

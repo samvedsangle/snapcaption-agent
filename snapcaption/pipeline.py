@@ -28,6 +28,8 @@ from .tools.exif import read_exif
 from .tools.timectx import build_time_context
 
 MIN_CAPTIONS, MAX_CAPTIONS = 3, 15
+MAX_NOTE_CHARS = 300
+DEFAULT_LANGUAGE = "English"
 PER_STYLE_CAP = 3
 # Models sometimes echo Instagram's "... more" fold after a finished sentence.
 _TRAILING_MORE = re.compile(r"([.!?…])\s*(?:\.\.\.|…)?\s*more$", re.I)
@@ -58,6 +60,8 @@ class State(TypedDict, total=False):
     platform: str
     n: int
     voice_samples: list[str]
+    note: str  # what the person says the moment is ("my sister's birthday dinner")
+    language: str
     # intermediate
     exif: ExifInfo
     vision: dict
@@ -66,6 +70,7 @@ class State(TypedDict, total=False):
     time: TimeContext
     candidates: list[dict]
     hashtag_pool: dict
+    alt_text: str
     scores: dict
     # output
     result: dict
@@ -151,6 +156,8 @@ def _build_graph(deps: Deps):
             context["time"] = time_ctx.model_dump(exclude={"known"})
         else:  # no timestamp: only the light in the image tells us anything
             context["time_of_day_from_image"] = vision.get("time_of_day_visual") or "unclear"
+        if state.get("note"):
+            context["what_the_person_says_about_it"] = state["note"]
 
         prompt = prompts.writer_prompt(
             vision=vision,
@@ -160,6 +167,7 @@ def _build_graph(deps: Deps):
             platform_notes=spec.notes,
             voice_samples=state.get("voice_samples"),
             count=max(25, state["n"] * 2 + 5),
+            language=state.get("language") or DEFAULT_LANGUAGE,
         )
         resp = deps.llm.text_json(prompt, temperature=0.9, schema=prompts.WRITER_SCHEMA)
 
@@ -174,7 +182,8 @@ def _build_graph(deps: Deps):
                 candidates.append({"text": text, "style": str(item.get("style") or "other")})
         if not candidates:
             raise PipelineError("The model returned no captions. Try again.")
-        return {"candidates": candidates, "hashtag_pool": resp.get("hashtags") or {}}
+        alt_text = str(resp.get("alt_text") or vision.get("scene") or "").strip()
+        return {"candidates": candidates, "hashtag_pool": resp.get("hashtags") or {}, "alt_text": alt_text}
 
     def node_score_captions(state: State) -> dict:
         if not deps.use_critic:
@@ -231,6 +240,8 @@ def _build_graph(deps: Deps):
                 "captions": captions,
                 "hashtags": hashtags,
                 "choices": choices,
+                "alt_text": state.get("alt_text") or "",
+                "language": state.get("language") or DEFAULT_LANGUAGE,
                 "context": {
                     "place": place.label if place else "",
                     "place_source": place.source if place else "none",
@@ -272,6 +283,8 @@ def run_pipeline(
     platform: str = "instagram",
     n: int = 10,
     voice_samples: Optional[list[str]] = None,
+    note: str = "",
+    language: str = DEFAULT_LANGUAGE,
 ) -> dict:
     """Photo bytes in, ranked captions + hashtags + context out. Raises ValueError for non-images."""
     open_image(image)  # fail fast, before spending a model call
@@ -283,6 +296,8 @@ def run_pipeline(
             "platform": normalize_platform(platform),
             "n": max(MIN_CAPTIONS, min(MAX_CAPTIONS, int(n or 10))),
             "voice_samples": [s for s in (voice_samples or []) if s and s.strip()],
+            "note": (note or "").strip()[:MAX_NOTE_CHARS],
+            "language": (language or "").strip()[:40] or DEFAULT_LANGUAGE,
             "warnings": [],
             "timings": {},
         }

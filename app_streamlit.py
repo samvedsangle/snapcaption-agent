@@ -27,13 +27,41 @@ _secrets_to_env()
 from snapcaption.llm import LLMError  # noqa: E402
 from snapcaption.pipeline import PipelineError  # noqa: E402
 from snapcaption.platforms import PLATFORMS  # noqa: E402
-from snapcaption.service import caption_photo, get_store  # noqa: E402
+from snapcaption.prompts import REWRITES  # noqa: E402
+from snapcaption.service import caption_photo, get_store, rewrite_caption  # noqa: E402
+
+LANGUAGES = [
+    "English", "Spanish", "Hindi", "French", "Portuguese", "German", "Italian", "Arabic",
+    "Bengali", "Marathi", "Tamil", "Telugu", "Gujarati", "Urdu", "Japanese", "Korean",
+    "Chinese (Simplified)", "Indonesian", "Turkish", "Vietnamese",
+]  # fmt: skip
+REWRITE_LABELS = {
+    "shorter": "✂️ Shorter",
+    "funnier": "😂 Funnier",
+    "more_personal": "💬 More personal",
+    "add_emoji": "✨ Add emoji",
+    "more_professional": "💼 More professional",
+}
 
 
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=16)
-def _generate(image_hash: str, _image: bytes, user_id: str, platform: str, place: str, nonce: int):
+def _generate(
+    image_hash: str, _image: bytes, user_id: str, platform: str, place: str, note: str, language: str, nonce: int
+):
     # image_hash / nonce are part of the cache key; the raw bytes are excluded from hashing.
-    return caption_photo(_image, user_id=user_id, platform=platform, place_hint=place)
+    return caption_photo(
+        _image, user_id=user_id, platform=platform, place_hint=place, note=note, language=language
+    )
+
+
+def _rewrite(key: str, text: str, how: str, user_id: str, platform: str, language: str) -> None:
+    try:
+        st.session_state[key] = {
+            "how": how,
+            "options": rewrite_caption(text, how, user_id=user_id, platform=platform, language=language),
+        }
+    except Exception as e:  # noqa: BLE001
+        st.session_state[key] = {"how": how, "error": str(e)}
 
 
 def _log_pick(generation_id: int, rank: int) -> None:
@@ -44,7 +72,7 @@ def _log_pick(generation_id: int, rank: int) -> None:
         st.session_state["toast"] = f"Couldn't log that pick ({e})."
 
 
-def render_captions(user_id: str, include_tags: bool) -> None:
+def render_captions(user_id: str, include_tags: bool, language: str) -> None:
     toast = st.session_state.pop("toast", None)
     if toast:
         st.toast(toast)
@@ -61,6 +89,12 @@ def render_captions(user_id: str, include_tags: bool) -> None:
         "📍 Place (optional)",
         placeholder="e.g. Klyde Warren Park, Dallas",
         help="Only needed when the photo has no location. Press Enter to regenerate.",
+    )
+    note = st.text_input(
+        "📝 What's the moment? (optional)",
+        placeholder="e.g. birthday dinner with my roommates",
+        help="The photo can't tell what the occasion is. A few words here make the captions personal.",
+        max_chars=300,
     )
 
     if upload is None:
@@ -81,6 +115,8 @@ def render_captions(user_id: str, include_tags: bool) -> None:
                 user_id,
                 platform,
                 place.strip(),
+                note.strip(),
+                language,
                 st.session_state.get("nonce", 0),
             )
     except ValueError as e:
@@ -119,14 +155,32 @@ def render_captions(user_id: str, include_tags: bool) -> None:
         with st.container(border=True):
             body = f"{cap['text']}\n\n{tag_line}" if include_tags and tag_line else cap["text"]
             st.code(body, language=None, wrap_lines=True)  # built-in copy button
-            left, right = st.columns([3, 1])
+            left, mid, right = st.columns([2, 1, 1])
             left.caption(f"{cap['rank']}. {cap['style'].replace('_', ' ')}")
+            rw_key = f"rw_{generation_id}_{cap['rank']}"
+            with mid.popover("✏️ Rewrite"):
+                for how in REWRITES:
+                    st.button(
+                        REWRITE_LABELS[how],
+                        key=f"{rw_key}_{how}",
+                        on_click=_rewrite,
+                        args=(rw_key, cap["text"], how, user_id, platform, language),
+                        use_container_width=True,
+                    )
             right.button(
                 "Use this",
                 key=f"use_{generation_id}_{cap['rank']}",
                 on_click=_log_pick,
                 args=(generation_id, cap["rank"]),
             )
+            rewritten = st.session_state.get(rw_key)
+            if rewritten and rewritten.get("error"):
+                st.warning(f"Couldn't rewrite that one: {rewritten['error']}")
+            elif rewritten:
+                st.caption(f"{REWRITE_LABELS[rewritten['how']]} versions")
+                for option in rewritten["options"]:
+                    text = f"{option}\n\n{tag_line}" if include_tags and tag_line else option
+                    st.code(text, language=None, wrap_lines=True)
 
     if tag_line:
         st.subheader("Hashtags")
@@ -135,6 +189,13 @@ def render_captions(user_id: str, include_tags: bool) -> None:
             if tiers[name]:
                 st.caption(f"{name}: " + " ".join(tiers[name]))
         st.code(tag_line, language=None, wrap_lines=True)
+
+    if result.get("alt_text"):
+        with st.expander("♿ Alt text (for screen readers)"):
+            st.caption(
+                "On Instagram: Advanced settings → Accessibility → Write alt text, before you share."
+            )
+            st.code(result["alt_text"], language=None, wrap_lines=True)
 
     if st.button("🔄 Another batch"):
         st.session_state["nonce"] = st.session_state.get("nonce", 0) + 1
@@ -209,11 +270,12 @@ def main() -> None:
         if user_id != start_user:
             st.query_params["u"] = user_id
         include_tags = st.toggle("Copy hashtags with each caption", value=True)
+        language = st.selectbox("Caption language", LANGUAGES, index=0)
         st.caption("Photos aren't stored. Location is reduced to a place name.")
 
     tab_captions, tab_voice, tab_stats = st.tabs(["Captions", "My voice", "Results"])
     with tab_captions:
-        render_captions(user_id, include_tags)
+        render_captions(user_id, include_tags, language)
     with tab_voice:
         render_voice(user_id)
     with tab_stats:

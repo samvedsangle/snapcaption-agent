@@ -7,6 +7,17 @@ Two ways to use it, one engine:
 - **Web app (Streamlit):** open the link, drop a photo, captions appear on their own. One tap copies caption + hashtags.
 - **Share-sheet shortcut (iPhone Shortcuts / Android HTTP Shortcuts):** Photos → Share → "Caption this" → pick one → it's on your clipboard. Nothing to open.
 
+## What you get
+
+- **10 ranked captions** that sound like a person wrote them, anchored in what's actually in the photo, where it was taken, the weather and the light.
+- **"What's the moment?"**: a few words ("birthday dinner with my roommates") and the captions build on the real story.
+- **20 languages**: captions (and alt text) in Spanish, Hindi, French, Arabic, Japanese and more.
+- **One-tap rewrites** on any caption: shorter, funnier, more personal, add emoji, or more professional.
+- **Alt text** for screen readers, ready to paste into Instagram's accessibility setting.
+- **Tiered hashtags** (location, niche, mid, broad) sized per platform, with spam tags and typos filtered out.
+- **Your voice**: paste past captions once and new ones match your tone. Edited picks become new samples.
+- **Free to run**: Gemini's free tier with automatic fallback when a model is busy, or a fully local model via Ollama.
+
 ## How it works
 
 ```mermaid
@@ -54,6 +65,8 @@ API smoke test:
 
 ```bash
 curl -H "X-API-Key: $API_KEY" -F file=@photo.jpg -F user_id=me "http://localhost:8000/caption?format=text"
+curl -H "X-API-Key: $API_KEY" -F file=@photo.jpg -F note="first day at the new job" -F language=Spanish http://localhost:8000/caption
+curl -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d '{"text": "came for tacos", "how": "funnier"}' http://localhost:8000/rewrite
 ```
 
 ### First-run checklist (do this once with a real key)
@@ -108,6 +121,8 @@ Always set `API_KEY` on a public API. Without it, anyone who finds the URL can s
      - `file` → type **File** → value **Shortcut Input**
      - `user_id` → type **Text** → your handle
      - optional `platform` → Text → `instagram` (or `tiktok`, `threads`, `x`, `linkedin`)
+     - optional `language` → Text → e.g. `Spanish`
+     - optional `note` → Text → **Ask Each Time**, so you can type what the moment is
 3. Add **Get Dictionary Value** → key `choices` → from *Contents of URL*.
 4. Add **Choose from List** (input: the dictionary value). Each option is a caption with its hashtags, ready to paste.
 5. Add **Copy to Clipboard**.
@@ -149,7 +164,7 @@ Swap providers by changing `LLM_PROVIDER`; `snapcaption/llm.py` is the only file
 
 ```
 app_streamlit.py          web UI (captions / my voice / results tabs)
-api.py                    FastAPI: /caption /pick /outcome /voice /metrics /health
+api.py                    FastAPI: /caption /rewrite /pick /outcome /voice /metrics /health
 snapcaption/
   pipeline.py             LangGraph: parallel enrichment, generate, critic, rank
   service.py              the one function both front ends call

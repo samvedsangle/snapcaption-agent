@@ -38,8 +38,8 @@ def test_upload_shows_captions_then_logs_a_pick(monkeypatch, tmp_path):
     at.file_uploader[0].set_value(("dallas.jpg", photo, "image/jpeg")).run()
     assert not at.exception
 
-    # ten caption cards plus one hashtag block, each with a built-in copy button
-    assert len(at.code) == 11
+    # ten caption cards, the hashtag block and the alt text, each with a built-in copy button
+    assert len(at.code) == 12
     assert "#dallas" in at.code[0].value  # hashtags are copied with the caption by default
     chips = " ".join(c.value for c in at.caption)
     assert "Klyde Warren Park, Dallas, Texas" in chips and "golden hour" in chips
@@ -69,3 +69,25 @@ def test_missing_api_key_is_explained_in_the_ui(monkeypatch, tmp_path):
     assert not at.exception
     assert any("GEMINI_API_KEY" in e.value for e in at.error)
     assert any(b.label == "🔄 Try again" for b in at.button)
+
+
+def test_note_language_and_rewrite_flow(monkeypatch, tmp_path):
+    deps = make_deps()
+    photo = make_jpeg(lat=32.7894, lon=-96.8014, taken="2026:10:10 18:05:00", size=(68, 52))
+    at = new_app(monkeypatch, tmp_path, deps).run()
+    at.sidebar.selectbox[0].set_value("Spanish")
+    note_box = next(t for t in at.text_input if "moment" in t.label)
+    note_box.set_value("birthday dinner with my roommates")
+    at.file_uploader[0].set_value(("p.jpg", photo, "image/jpeg")).run()
+    assert not at.exception
+    writer = next(p for p in deps.llm.prompts if "TASK: WRITE_CAPTIONS" in p)
+    assert "birthday dinner with my roommates" in writer and "in Spanish" in writer
+
+    shorter = next(b for b in at.button if b.label == "✂️ Shorter")
+    shorter.click().run()
+    assert not at.exception
+    rewrite = deps.llm.prompts[-1]
+    assert "TASK: REWRITE_CAPTION" in rewrite and "Keep it in Spanish" in rewrite
+    shown = [c.value for c in at.code]
+    assert any(v.startswith("take one") for v in shown) and any(v.startswith("take three") for v in shown)
+    assert not any(v.startswith("take four") for v in shown)  # three options at most

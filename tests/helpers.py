@@ -102,6 +102,8 @@ class FakeLLM:
                     {"i": i, "voice": 6, "hook": 9 - (i % 5), "originality": 7} for i in range(n)
                 ]
             }
+        if "TASK: REWRITE_CAPTION" in prompt:
+            return {"options": ["take one", "take two", "take two", "take three", "take four"]}
         raise AssertionError("unexpected prompt")
 
 

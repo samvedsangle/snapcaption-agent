@@ -175,3 +175,23 @@ def test_voice_endpoint_changes_the_next_batch(client, jpeg_gps):
     assert "sunday reset, no notes" in deps.llm.prompts[-2]
     post_photo(api, jpeg_gps, data={"user_id": "someone-else"})
     assert "sunday reset, no notes" not in deps.llm.prompts[-2]
+
+
+def test_rewrite_endpoint(client):
+    api, deps = client
+    auth = {"X-API-Key": "secret"}
+    r = api.post("/rewrite", json={"text": "came for tacos", "how": "funnier"}, headers=auth)
+    assert r.status_code == 200 and r.json() == {"options": ["take one", "take two", "take three"]}
+    assert "funnier" in deps.llm.prompts[-1].lower()
+    assert api.post("/rewrite", json={"text": "x", "how": "louder"}, headers=auth).status_code == 400
+    assert api.post("/rewrite", json={"text": "", "how": "shorter"}, headers=auth).status_code == 400
+    assert api.post("/rewrite", json={"text": "x"}).status_code == 401
+
+
+def test_caption_note_language_and_alt_text(client, jpeg_gps):
+    api, deps = client
+    r = post_photo(api, jpeg_gps, data={"note": "first day at the new job", "language": "Hindi"})
+    body = r.json()
+    assert r.status_code == 200 and body["language"] == "Hindi" and body["alt_text"]
+    writer = deps.llm.prompts[-2]
+    assert "first day at the new job" in writer and "in Hindi" in writer

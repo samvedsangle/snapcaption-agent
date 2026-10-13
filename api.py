@@ -37,14 +37,17 @@ def caption(
     user_id: str = Form("default"),
     platform: str = Form("instagram"),
     place: str = Form(""),
+    note: str = Form(""),
+    language: str = Form("English"),
     n: int = Form(10),
     format: str = Query("json", pattern="^(json|text)$"),
     _: None = Depends(require_key),
 ):
     """Upload a photo, get ranked captions and hashtags.
 
-    format=json returns captions, hashtags, `choices` (caption + hashtags, ready to paste)
-    and `generation_id`. format=text returns a plain-text list.
+    `note` is what the moment is ("my sister's birthday dinner"); `language` picks the
+    caption language. format=json returns captions, hashtags, `choices` (caption + hashtags,
+    ready to paste), `alt_text` and `generation_id`. format=text returns a plain-text list.
     """
     limit = load_settings().max_upload_mb * 1024 * 1024
     data = file.file.read(limit + 1)
@@ -58,6 +61,8 @@ def caption(
             platform=platform,
             place_hint=place,
             n=n,
+            note=note,
+            language=language,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -67,6 +72,28 @@ def caption(
     if format == "text":
         return PlainTextResponse(service.render_text(result))
     return result
+
+
+class RewriteIn(BaseModel):
+    text: str
+    how: str = "shorter"  # shorter | funnier | more_personal | add_emoji | more_professional
+    user_id: str = "default"
+    platform: str = "instagram"
+    language: str = "English"
+
+
+@app.post("/rewrite")
+def rewrite(body: RewriteIn, _: None = Depends(require_key)) -> dict:
+    """Three new versions of one caption."""
+    try:
+        options = service.rewrite_caption(
+            body.text, body.how, user_id=body.user_id, platform=body.platform, language=body.language
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"options": options}
 
 
 class PickIn(BaseModel):
