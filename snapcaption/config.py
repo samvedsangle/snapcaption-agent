@@ -19,6 +19,7 @@ class Settings:
     gemini_model: str = "gemini-flash-lite-latest"
     # Tried in order when a model is overloaded, out of free quota or too slow.
     gemini_fallbacks: tuple[str, ...] = ("gemini-flash-latest", "gemini-3.5-flash")
+    gemini_timeout_s: int = 45  # per call; a stuck call moves on to the next model
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
     ollama_host: str = "http://localhost:11434"
@@ -51,6 +52,7 @@ def load_settings() -> Settings:
         gemini_fallbacks=tuple(
             m.strip() for m in (env("GEMINI_FALLBACK_MODELS") or ",".join(d.gemini_fallbacks)).split(",") if m.strip()
         ),
+        gemini_timeout_s=_int("GEMINI_TIMEOUT_S", d.gemini_timeout_s),
         anthropic_api_key=(env("ANTHROPIC_API_KEY") or "").strip(),
         anthropic_model=(env("ANTHROPIC_MODEL") or d.anthropic_model).strip(),
         ollama_host=(env("OLLAMA_HOST") or d.ollama_host).strip(),

@@ -154,7 +154,7 @@ Treat per-style likes as a hint, not a verdict: with a few dozen posts, audience
 
 ## Configuration
 
-All via environment variables (see `.env.example`): `LLM_PROVIDER` (`gemini` | `anthropic` | `ollama`), `GEMINI_API_KEY`, `GEMINI_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `API_KEY`, `DB_PATH`, `NOMINATIM_USER_AGENT`, `TEMP_UNIT`, `MAX_UPLOAD_MB`.
+All via environment variables (see `.env.example`): `LLM_PROVIDER` (`gemini` | `anthropic` | `ollama`), `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS`, `GEMINI_TIMEOUT_S`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `API_KEY`, `DB_PATH`, `NOMINATIM_USER_AGENT`, `TEMP_UNIT`, `MAX_UPLOAD_MB`.
 
 **Free, fully local option:** install [Ollama](https://ollama.com), run `ollama pull gemma3:4b`, and set `LLM_PROVIDER=ollama`. No key, and photos never leave your computer. It runs about a minute per photo on an 8 GB M2 (the critic step is skipped for local models) and can't run on Streamlit Community Cloud, so the hosted app uses Gemini's free tier.
 

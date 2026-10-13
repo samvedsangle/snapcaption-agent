@@ -75,9 +75,11 @@ class GeminiLLM(_BaseLLM):
     the fallback chain answers instead (free-tier models get overloaded at peak times)."""
 
     name = "Gemini"
-    timeout_ms = 45_000  # a stuck call moves on to the next model instead of hanging the page
 
-    def __init__(self, api_key: str, model: str, client: Any = None, fallbacks: tuple[str, ...] = ()):
+    def __init__(
+        self, api_key: str, model: str, client: Any = None, fallbacks: tuple[str, ...] = (), timeout_s: float = 45
+    ):
+        self.timeout_ms = int(timeout_s * 1000)
         if client is None:
             from google import genai
             from google.genai import types
@@ -260,7 +262,7 @@ def get_llm(settings: Settings):
                 "GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey "
                 "and put it in .env (or your host's secrets)."
             )
-        return GeminiLLM(settings.gemini_api_key, settings.gemini_model, fallbacks=settings.gemini_fallbacks)
+        return GeminiLLM(settings.gemini_api_key, settings.gemini_model, fallbacks=settings.gemini_fallbacks, timeout_s=settings.gemini_timeout_s)
     if provider == "anthropic":
         if not settings.anthropic_api_key:
             raise LLMError("ANTHROPIC_API_KEY is not set. Add it to .env (or your host's secrets).")
