@@ -11,7 +11,7 @@ from .platforms import get_platform
 from .schemas import Place
 
 TIERS = ("location", "niche", "mid", "broad")
-_NEAR_DUPLICATE = 0.85  # "klyderenpark" (a model typo) vs "klydewarrenpark", "cityscapes" vs "cityscape"
+_NEAR_DUPLICATE = 0.8  # "klyderenpark" (a typo) or "klydewarren" vs "klydewarrenpark", "cityscapes" vs "cityscape"
 _MIN_LEN, _MAX_LEN = 2, 30
 _BAIT = re.compile(r"^(like|follow|comment|share|tag|sub)s?(4|for)(like|follow|comment|share|tag|sub)s?$")
 _BANNED = {

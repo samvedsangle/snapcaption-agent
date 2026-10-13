@@ -67,22 +67,35 @@ class GeminiLLM(_BaseLLM):
 
             client = genai.Client(api_key=api_key)
         self.client, self.model = client, model
+        self._thinking_ok = True  # turned off if this model rejects our thinking setting
+
+    def _thinking_config(self, types):
+        # Describing, writing and scoring captions doesn't need much hidden reasoning; less of
+        # it makes each call faster and stretches the free tier's token quota.
+        if not self._thinking_ok:
+            return None
+        if self.model.startswith("gemini-2.5-flash"):
+            return types.ThinkingConfig(thinking_budget=0)
+        if not self.model.startswith(("gemini-1", "gemini-2")):
+            return types.ThinkingConfig(thinking_level="low")  # Gemini 3+ and the -latest aliases
+        return None
 
     def _call(self, contents: list, temperature: float) -> Optional[str]:
         from google.genai import types
 
-        extra = {}
-        if self.model.startswith("gemini-2.5-flash"):
-            # Describing, writing and scoring captions doesn't need hidden reasoning; skipping
-            # it makes each call faster and stretches the free tier's token quota.
-            extra["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        resp = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json", temperature=temperature, **extra
-            ),
+        thinking = self._thinking_config(types)
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=temperature,
+            **({"thinking_config": thinking} if thinking else {}),
         )
+        try:
+            resp = self.client.models.generate_content(model=self.model, contents=contents, config=config)
+        except Exception as e:  # noqa: BLE001
+            if thinking is None or "thinking" not in str(e).lower():
+                raise
+            self._thinking_ok = False  # a newer model with different options: use its defaults
+            return self._call(contents, temperature)
         return resp.text
 
     def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:

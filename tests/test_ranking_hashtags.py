@@ -152,7 +152,7 @@ def test_country_is_the_last_resort_location_tag():
 
 
 def test_misspelled_and_plural_near_copies_are_dropped():
-    tags = build_hashtags({"niche": ["klyderenpark", "cityscapes", "cityscape", "dallasparks"]}, PARK, "instagram")
-    assert "#klyderenpark" not in tags["all"] and "#klydewarrenpark" in tags["all"]
+    tags = build_hashtags({"niche": ["klyderenpark", "klydewarren", "cityscapes", "cityscape", "dallasparks"]}, PARK, "instagram")
+    assert "#klyderenpark" not in tags["all"] and "#klydewarren" not in tags["all"] and "#klydewarrenpark" in tags["all"]
     assert tags["all"].count("#cityscape") + tags["all"].count("#cityscapes") == 1
     assert "#dallasparks" in tags["all"]  # related, but not a copy of #dallas

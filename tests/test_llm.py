@@ -95,11 +95,19 @@ def test_gemini_text_request_shape():
     assert call["config"].temperature == 0.3
 
 
-def test_gemini_flash_skips_thinking_other_models_untouched():
-    models = FakeGeminiModels(['{"ok": 1}', '{"ok": 1}'])
-    GeminiLLM("key", "gemini-2.5-flash", client=SimpleNamespace(models=models)).text_json("p")
-    GeminiLLM("key", "gemini-pro-x", client=SimpleNamespace(models=models)).text_json("p")
+def test_gemini_thinking_is_kept_low_per_model_family():
+    models = FakeGeminiModels(['{"ok": 1}'] * 3)
+    for name in ("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-pro"):
+        GeminiLLM("key", name, client=SimpleNamespace(models=models)).text_json("p")
     assert models.calls[0]["config"].thinking_config.thinking_budget == 0
+    assert models.calls[1]["config"].thinking_config.thinking_level.value.lower() == "low"
+    assert models.calls[2]["config"].thinking_config is None
+
+
+def test_gemini_drops_a_rejected_thinking_setting():
+    models = FakeGeminiModels([RuntimeError("400 Thinking level LOW is not supported"), '{"ok": 1}'])
+    llm = GeminiLLM("key", "gemini-9-flash", client=SimpleNamespace(models=models))
+    assert llm.text_json("p") == {"ok": 1}
     assert models.calls[1]["config"].thinking_config is None
 
 

@@ -14,7 +14,7 @@ load_dotenv(override=False)  # real environment variables always win
 class Settings:
     provider: str = "gemini"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-flash-latest"  # follows the current Flash model
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
     ollama_host: str = "http://localhost:11434"
