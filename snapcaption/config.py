@@ -15,6 +15,8 @@ class Settings:
     provider: str = "gemini"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"  # follows the current Flash model
+    # Tried in order when a model is overloaded or out of free quota.
+    gemini_fallbacks: tuple[str, ...] = ("gemini-3.5-flash", "gemini-flash-lite-latest")
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-5-5"  # Claude has no free tier; this is the cheapest
     ollama_host: str = "http://localhost:11434"
@@ -44,6 +46,9 @@ def load_settings() -> Settings:
         provider=(env("LLM_PROVIDER") or d.provider).strip().lower(),
         gemini_api_key=(env("GEMINI_API_KEY") or "").strip(),
         gemini_model=(env("GEMINI_MODEL") or d.gemini_model).strip(),
+        gemini_fallbacks=tuple(
+            m.strip() for m in (env("GEMINI_FALLBACK_MODELS") or ",".join(d.gemini_fallbacks)).split(",") if m.strip()
+        ),
         anthropic_api_key=(env("ANTHROPIC_API_KEY") or "").strip(),
         anthropic_model=(env("ANTHROPIC_MODEL") or d.anthropic_model).strip(),
         ollama_host=(env("OLLAMA_HOST") or d.ollama_host).strip(),

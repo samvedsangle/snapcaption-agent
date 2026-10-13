@@ -68,3 +68,4 @@ def test_missing_api_key_is_explained_in_the_ui(monkeypatch, tmp_path):
     at.file_uploader[0].set_value(("p.jpg", photo, "image/jpeg")).run()
     assert not at.exception
     assert any("GEMINI_API_KEY" in e.value for e in at.error)
+    assert any(b.label == "🔄 Try again" for b in at.button)

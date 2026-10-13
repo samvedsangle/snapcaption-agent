@@ -88,6 +88,7 @@ def render_captions(user_id: str, include_tags: bool) -> None:
         return
     except (LLMError, PipelineError) as e:
         st.error(f"The caption model had a problem: {e}")
+        st.button("🔄 Try again")  # failures aren't cached, so the rerun asks the model again
         return
     except Exception as e:  # noqa: BLE001
         st.error("Something went wrong while generating captions.")

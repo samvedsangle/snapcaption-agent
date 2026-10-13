@@ -58,48 +58,75 @@ class _BaseLLM:
         raise LLMError(f"{self.name} request failed: {last}") from last
 
 
+_BUSY_SIGNS = ("503", "429", "unavailable", "resource_exhausted", "high demand", "overloaded", "quota")
+
+
+def _is_busy(error: BaseException | None) -> bool:
+    """Capacity or rate-limit errors: worth trying another model rather than giving up."""
+    text = str(error or "").lower()
+    return any(sign in text for sign in _BUSY_SIGNS)
+
+
 class GeminiLLM(_BaseLLM):
+    """Gemini via google-genai. When a model is busy or out of free quota, the next model in
+    the fallback chain answers instead (free-tier models get overloaded at peak times)."""
+
     name = "Gemini"
 
-    def __init__(self, api_key: str, model: str, client: Any = None):
+    def __init__(self, api_key: str, model: str, client: Any = None, fallbacks: tuple[str, ...] = ()):
         if client is None:
             from google import genai
 
             client = genai.Client(api_key=api_key)
         self.client, self.model = client, model
-        self._thinking_ok = True  # turned off if this model rejects our thinking setting
+        self.models = [model] + [m for m in fallbacks if m and m != model]
+        self._no_thinking: set[str] = set()  # models that rejected our thinking setting
 
-    def _thinking_config(self, types):
+    def _thinking_config(self, types, model: str):
         # Describing, writing and scoring captions doesn't need much hidden reasoning; less of
         # it makes each call faster and stretches the free tier's token quota.
-        if not self._thinking_ok:
+        if model in self._no_thinking:
             return None
-        if self.model.startswith("gemini-2.5-flash"):
+        if model.startswith("gemini-2.5-flash"):
             return types.ThinkingConfig(thinking_budget=0)
-        if not self.model.startswith(("gemini-1", "gemini-2")):
+        if not model.startswith(("gemini-1", "gemini-2")):
             return types.ThinkingConfig(thinking_level="low")  # Gemini 3+ and the -latest aliases
         return None
 
-    def _call(self, contents: list, temperature: float) -> Optional[str]:
+    def _call(self, model: str, contents: list, temperature: float) -> Optional[str]:
         from google.genai import types
 
-        thinking = self._thinking_config(types)
+        thinking = self._thinking_config(types, model)
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=temperature,
             **({"thinking_config": thinking} if thinking else {}),
         )
         try:
-            resp = self.client.models.generate_content(model=self.model, contents=contents, config=config)
+            resp = self.client.models.generate_content(model=model, contents=contents, config=config)
         except Exception as e:  # noqa: BLE001
             if thinking is None or "thinking" not in str(e).lower():
                 raise
-            self._thinking_ok = False  # a newer model with different options: use its defaults
-            return self._call(contents, temperature)
+            self._no_thinking.add(model)  # a newer model with different options: use its defaults
+            return self._call(model, contents, temperature)
         return resp.text
 
+    def _generate(self, contents: list, temperature: float) -> dict:
+        busy: LLMError | None = None
+        for model in self.models:
+            try:
+                return self._json_with_retries(lambda m=model: self._call(m, contents, temperature))
+            except LLMError as e:
+                if not _is_busy(e.__cause__):
+                    raise
+                busy = e
+        detail = str(busy.__cause__)[:160] if busy else ""
+        raise LLMError(
+            f"Gemini's free models are busy right now ({detail}). Wait a minute and try again."
+        ) from busy
+
     def text_json(self, prompt: str, temperature: float = 0.7, schema: Optional[dict] = None) -> dict:
-        return self._json_with_retries(lambda: self._call([prompt], temperature))
+        return self._generate([prompt], temperature)
 
     def vision_json(
         self, image_bytes: bytes, mime: str, prompt: str, temperature: float = 0.2, schema: Optional[dict] = None
@@ -107,7 +134,7 @@ class GeminiLLM(_BaseLLM):
         from google.genai import types
 
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime)
-        return self._json_with_retries(lambda: self._call([part, prompt], temperature))
+        return self._generate([part, prompt], temperature)
 
 
 class AnthropicLLM(_BaseLLM):
@@ -220,7 +247,7 @@ def get_llm(settings: Settings):
                 "GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey "
                 "and put it in .env (or your host's secrets)."
             )
-        return GeminiLLM(settings.gemini_api_key, settings.gemini_model)
+        return GeminiLLM(settings.gemini_api_key, settings.gemini_model, fallbacks=settings.gemini_fallbacks)
     if provider == "anthropic":
         if not settings.anthropic_api_key:
             raise LLMError("ANTHROPIC_API_KEY is not set. Add it to .env (or your host's secrets).")

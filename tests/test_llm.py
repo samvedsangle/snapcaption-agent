@@ -129,6 +129,28 @@ def test_gemini_retries_after_an_api_error_and_bad_json():
     assert len(models2.calls) == 2
 
 
+def test_busy_gemini_model_falls_back_to_the_next_one():
+    models = FakeGeminiModels([RuntimeError("503 UNAVAILABLE high demand")] * 2 + ['{"ok": 1}'])
+    llm = GeminiLLM("key", "main-model", client=SimpleNamespace(models=models), fallbacks=("lite-model",))
+    assert llm.text_json("p") == {"ok": 1}
+    assert [c["model"] for c in models.calls] == ["main-model", "main-model", "lite-model"]
+
+
+def test_non_capacity_errors_do_not_fall_back():
+    models = FakeGeminiModels([RuntimeError("400 INVALID_ARGUMENT")] * 2)
+    llm = GeminiLLM("key", "main-model", client=SimpleNamespace(models=models), fallbacks=("lite-model",))
+    with pytest.raises(LLMError, match="INVALID_ARGUMENT"):
+        llm.text_json("p")
+    assert {c["model"] for c in models.calls} == {"main-model"}
+
+
+def test_all_models_busy_says_so_plainly():
+    models = FakeGeminiModels([RuntimeError("429 RESOURCE_EXHAUSTED")] * 4)
+    llm = GeminiLLM("key", "a", client=SimpleNamespace(models=models), fallbacks=("b",))
+    with pytest.raises(LLMError, match="busy right now"):
+        llm.text_json("p")
+
+
 def test_gemini_gives_up_with_a_clear_error():
     llm, _ = gemini([RuntimeError("quota"), RuntimeError("quota")])
     with pytest.raises(LLMError, match="quota"):
